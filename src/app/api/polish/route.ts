@@ -8,9 +8,9 @@ export async function POST(request: Request) {
     if (!text) {
       return NextResponse.json({ error: 'Text is required' }, { status: 400 });
     }
-
-    const polishedText = await polishText(text);
-    return NextResponse.json({ polishedText });
+    // console.log('text', text)
+    const data = await polishText(text);
+    return NextResponse.json({ data });
   } catch (error) {
     console.error('Error in polish API:', error);
     return NextResponse.json(
