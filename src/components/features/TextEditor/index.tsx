@@ -68,6 +68,7 @@ export function TextEditor() {
 
   const handlePolish = async () => {
     if (!text.trim()) return;
+
     resetState();
     setActiveIndex(null);
     await polish(text);
@@ -255,10 +256,15 @@ export function TextEditor() {
             <div className="flex items-center justify-between">
               <div className="text-sm text-muted-foreground">
                 字数：{text.length}
+                {text.length > 1000 && (
+                  <span className="text-red-500">
+                    （体验版，字数限制1000字）
+                  </span>
+                )}
               </div>
               <Button
                 onClick={handlePolish}
-                disabled={isPolishing || !text.trim()}
+                disabled={isPolishing || !text.trim() || text.length > 1000}
                 className="group relative"
               >
                 {isPolishing ? (

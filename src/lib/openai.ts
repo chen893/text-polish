@@ -38,7 +38,10 @@ export async function purePolishText(
       response.choices[0]?.message?.content || '',
       'result'
     )[0];
-    return result;
+
+    return result.length > 0
+      ? result
+      : response.choices[0]?.message?.content || '';
   } catch (error) {
     console.error('Error parsing result:', error);
     return '';
@@ -76,8 +79,12 @@ export async function getDiffOperations(
     temperature: 0.7,
     max_tokens: 4096,
   });
+  let content = response.choices[0]?.message?.content || '';
   try {
-    const obj = JSON.parse(response.choices[0]?.message?.content || '');
+    if (content.includes('```json')) {
+      content = content.split('```json')[1].split('```')[0];
+    }
+    const obj = JSON.parse(content);
     return obj.newDiffs as DiffOperation[];
   } catch (error) {
     console.error('Error parsing JSON:', error);
