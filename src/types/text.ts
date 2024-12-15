@@ -13,3 +13,15 @@ export type Operation = {
   to: number;
   reason: string;
 };
+
+export type DiffOperation = {
+  id: number;
+  type: number;
+  text: string;
+  /*
+   * 如果该操作是关联替换的一部分，则提供 replaceId
+   * 如果该操作不是关联替换的一部分，则不提供 replaceId
+   */
+  replaceId?: number;
+  reason: string;
+};

@@ -1,6 +1,54 @@
 import OpenAI from 'openai';
-import { promptText } from './prompt';
-import { Operation } from '@/types/text';
+import { promptText, pureTextPolishPrompt, diffsPrompt } from './prompt';
+import { Operation, DiffOperation } from '@/types/text';
+import diff_match_patch from 'diff-match-patch';
+
+const openai = new OpenAI({
+  baseURL:
+    process.env.NEXT_PUBLIC_OPENAI_BASE_URL || 'https://api.deepseek.com',
+  apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY || '',
+  dangerouslyAllowBrowser: true,
+});
+
+// 接受新旧文本，返回diff操作数据
+export async function getDiffOperations(
+  oldText: string,
+  newText: string
+): Promise<DiffOperation[]> {
+  const dmp = new diff_match_patch();
+  // const diffs = dmp.diff_main(oldText, newText);
+  const diffs = dmp.diff_main(oldText, newText);
+  // console.log('diffs', diffs);
+  dmp.diff_cleanupSemantic(diffs);
+  const newDiffs = diffs.map((diff, index) => {
+    return {
+      type: diff[0],
+      text: diff[1],
+      index: index,
+    };
+  });
+
+  const response = await openai.chat.completions.create({
+    model: process.env.NEXT_PUBLIC_OPENAI_MODEL || 'gpt-4o-mini',
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: diffsPrompt },
+      {
+        role: 'user',
+        content: `oldText: ${oldText}\n newText: ${newText}\n diffs: ${JSON.stringify(newDiffs)}`,
+      },
+    ],
+    temperature: 0.7,
+    max_tokens: 2000,
+  });
+  try {
+    const obj = JSON.parse(response.choices[0]?.message?.content || '');
+    return obj.newDiffs as DiffOperation[];
+  } catch (error) {
+    console.error('Error parsing JSON:', error);
+    return [];
+  }
+}
 
 // 提取指定标签内部文本的函数
 function extractTextFromTag(htmlString: string, tagName: string) {
@@ -25,14 +73,48 @@ function extractTextFromTag(htmlString: string, tagName: string) {
   return extractedTexts;
 }
 
-const openai = new OpenAI({
-  baseURL:
-    process.env.NEXT_PUBLIC_OPENAI_BASE_URL || 'https://api.deepseek.com',
-  apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY || '',
-  dangerouslyAllowBrowser: true,
-});
+// 确保 JSON 字符串中的双引号被正确转义
+function ensureJsonSafe(jsonString: string): string {
+  // 使用正则表达式找到 JSON 对象中 text 和 original 字段中未转义的双引号
+  return jsonString.replace(
+    /("text"|"original"):\s*"(.*?)"/g,
+    (match, field, content) => {
+      // 将内容中的未转义双引号转义
+      const escapedContent = content.replace(/(?<!\\)"/g, '\\"');
+      return `${field}:"${escapedContent}"`;
+    }
+  );
+}
 
-// console.log(textCorrectionPrompt);
+export async function purePolishText(text: string): Promise<string> {
+  const response = await openai.chat.completions.create({
+    model: process.env.NEXT_PUBLIC_OPENAI_MODEL || 'gpt-4o-mini',
+    messages: [
+      {
+        role: 'system',
+        content: pureTextPolishPrompt,
+      },
+      {
+        role: 'user',
+        content: text,
+      },
+    ],
+    temperature: 0.7,
+    max_tokens: 2000,
+  });
+
+  // console.log(response.choices[0]?.message?.content);
+  try {
+    const result = extractTextFromTag(
+      response.choices[0]?.message?.content || '',
+      'result'
+    )[0];
+    return result;
+  } catch (error) {
+    console.error('Error parsing JSON:', error);
+    return '';
+  }
+}
 
 export async function polishText(text: string): Promise<Operation[] | []> {
   const response = await openai.chat.completions.create({
@@ -56,8 +138,12 @@ export async function polishText(text: string): Promise<Operation[] | []> {
     response.choices[0]?.message?.content || '',
     'json'
   )[0];
+
   try {
-    const data: Operation[] = JSON.parse(json);
+    // 在解析之前确保 JSON 字符串中的双引号被正确转义
+    const safeJson = ensureJsonSafe(json);
+    const data: Operation[] = JSON.parse(safeJson);
+
     const newText = data.reduce(
       (accumulator: string, currentValue: { text: string }) => {
         return accumulator + currentValue.text;
@@ -71,11 +157,4 @@ export async function polishText(text: string): Promise<Operation[] | []> {
     console.error('Error parsing JSON:', error);
     return [];
   }
-  // console.log(json);
-  //   return (
-  //     extractTextFromTag(
-  //       response.choices[0]?.message?.content || '',
-  //       'result'
-  //     )[0] || text
-  //   );
 }

@@ -1,10 +1,17 @@
-import { Operation, OperationType } from '@/types/text';
-import { Button } from '@/components/ui/button';
 import { Check, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
+interface Operation {
+  id: number;
+  type: number; // -1: 删除, 0: 保持不变, 1: 插入
+  text: string;
+  reason: string;
+  replaceId?: number;
+}
+
 interface SuggestionItemProps {
-  operation: Operation;
+  operations: Operation[];
   isActive: boolean;
   isAccepted?: boolean;
   isRejected?: boolean;
@@ -14,7 +21,7 @@ interface SuggestionItemProps {
 }
 
 export function SuggestionItem({
-  operation,
+  operations,
   isActive,
   isAccepted = false,
   isRejected = false,
@@ -22,33 +29,51 @@ export function SuggestionItem({
   onReject,
   onClick,
 }: SuggestionItemProps) {
-  const getOperationTypeText = (type: OperationType) => {
-    switch (type) {
-      case OperationType.Insert:
+  const mainOperation = operations[0];
+
+  const getOperationTypeText = () => {
+    if (operations.length > 1) {
+      return '替换';
+    }
+
+    switch (mainOperation.type) {
+      case 1:
         return '插入';
-      case OperationType.Delete:
+      case -1:
         return '删除';
-      case OperationType.Replace:
-        return '替换';
       default:
         return '无变化';
     }
   };
 
+  const getOriginalText = () => {
+    return operations
+      .filter((op) => op.type === -1)
+      .map((op) => op.text)
+      .join('');
+  };
+
+  const getNewText = () => {
+    return operations
+      .filter((op) => op.type === 1)
+      .map((op) => op.text)
+      .join('');
+  };
+
   return (
     <div
       className={cn(
-        'group relative cursor-pointer rounded-lg border p-4 transition-all hover:bg-accent',
+        'group relative cursor-pointer rounded-lg border p-3 transition-all hover:bg-accent lg:p-4',
         isActive && 'bg-accent',
         isAccepted && 'border-green-500/50',
         isRejected && 'border-red-500/50'
       )}
       onClick={onClick}
     >
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:mb-4">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-muted-foreground">
-            {getOperationTypeText(operation.type)}
+            {getOperationTypeText()}
           </span>
           {(isAccepted || isRejected) && (
             <span
@@ -71,12 +96,12 @@ export function SuggestionItem({
             </span>
           )}
         </div>
-        <div className="space-x-2">
+        <div className="flex gap-2">
           <Button
             size="sm"
             variant="ghost"
             className={cn(
-              'h-8 w-8 p-0',
+              'h-8 flex-1 sm:w-8 sm:flex-none sm:p-0',
               isAccepted
                 ? 'bg-green-500/20 text-green-500'
                 : 'hover:bg-green-500/20 hover:text-green-500'
@@ -87,12 +112,13 @@ export function SuggestionItem({
             }}
           >
             <Check className="h-4 w-4" />
+            <span className="ml-2 sm:hidden">接受</span>
           </Button>
           <Button
             size="sm"
             variant="ghost"
             className={cn(
-              'h-8 w-8 p-0',
+              'h-8 flex-1 sm:w-8 sm:flex-none sm:p-0',
               isRejected
                 ? 'bg-red-500/20 text-red-500'
                 : 'hover:bg-red-500/20 hover:text-red-500'
@@ -103,18 +129,22 @@ export function SuggestionItem({
             }}
           >
             <X className="h-4 w-4" />
+            <span className="ml-2 sm:hidden">拒绝</span>
           </Button>
         </div>
       </div>
-      <div className="space-y-2">
-        <div className="text-sm">
-          <span className="font-medium">原文：</span>
-          <span className="text-muted-foreground">{operation.original}</span>
+      <div className="space-y-2 text-sm">
+        <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
+          <span className="shrink-0 font-medium">原文：</span>
+          <span className="break-all text-muted-foreground">
+            {getOriginalText()}
+          </span>
         </div>
-        <div className="text-sm">
-          <span className="font-medium">建议：</span>
+        <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
+          <span className="shrink-0 font-medium">建议：</span>
           <span
             className={cn(
+              'break-all',
               isAccepted
                 ? 'text-green-500'
                 : isRejected
@@ -122,12 +152,14 @@ export function SuggestionItem({
                   : 'text-green-500'
             )}
           >
-            {operation.text}
+            {getNewText()}
           </span>
         </div>
-        <div className="text-sm">
-          <span className="font-medium">原因：</span>
-          <span className="text-muted-foreground">{operation.reason}</span>
+        <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
+          <span className="shrink-0 font-medium">原因：</span>
+          <span className="break-all text-muted-foreground">
+            {mainOperation.reason}
+          </span>
         </div>
       </div>
     </div>
