@@ -2,7 +2,12 @@
 import { useState, useMemo, useCallback } from 'react';
 import diff_match_patch from 'diff-match-patch';
 import { purePolishText, getDiffOperations } from '@/lib/openai';
-import { DiffOperation } from '@/types/text';
+import {
+  DiffOperation,
+  PolishOptions,
+  PolishStyle,
+  PolishTone,
+} from '@/types/text';
 
 export function usePolishText() {
   const [text, setText] = useState('');
@@ -17,39 +22,65 @@ export function usePolishText() {
   const [rejectedOperations, setRejectedOperations] = useState<Set<number>>(
     new Set()
   );
+  const [isPolishMode, setIsPolishMode] = useState(false);
+  const [polishStyle, setPolishStyle] = useState<PolishStyle>();
+  const [polishTone, setPolishTone] = useState<PolishTone>();
+  const [highlightedGroupId, setHighlightedGroupId] = useState<string | null>(
+    null
+  );
+
+  // 重置所有状态
+  const resetState = useCallback(() => {
+    setDiffs(undefined);
+    setDiffOperations([]);
+    setPolishedText('');
+    setAcceptedOperations(new Set());
+    setRejectedOperations(new Set());
+    setIsCustomizing(false);
+  }, []);
 
   // 按replaceId分组的操作
   const groupedOperations: DiffOperation[][] = useMemo(() => {
-    const groups = new Map<number, DiffOperation[]>();
+    const groups = new Map<number | string, DiffOperation[]>();
 
     diffOperations.forEach((op) => {
       if (op.type === 0) return; // 跳过无变化的操作
-
+      const newReplaceId = 'r-' + op.replaceId;
       if (op.replaceId !== undefined) {
-        if (!groups.has(op.replaceId)) {
-          groups.set(op.replaceId, []);
+        if (!groups.has(newReplaceId)) {
+          groups.set(newReplaceId, []);
         }
-        groups.get(op.replaceId)?.push(op);
+        groups.get(newReplaceId)?.push(op);
       } else {
         groups.set(op.id, [op]);
       }
     });
 
+    // console.log('groupedOperations', groups.values());
     return Array.from(groups.values());
   }, [diffOperations]);
 
   const polish = async (inputText: string) => {
     try {
+      // 重置状态
+      resetState();
       setIsPolishing(true);
       setText(inputText);
+
+      const options: PolishOptions = {
+        isPolishMode,
+        style: polishStyle,
+        tone: polishTone,
+      };
+
       // 获取润色后的文本
-      const polishedText = await purePolishText(inputText);
+      const polishedText = await purePolishText(inputText, options);
       setPolishedText(polishedText);
+
       const dmp = new diff_match_patch();
       const computedDiffs = dmp.diff_main(inputText, polishedText);
       dmp.diff_cleanupSemantic(computedDiffs);
       setDiffs(computedDiffs);
-      // await getOperations(inputText, polishedText);
     } catch (error) {
       console.error('Error polishing text:', error);
     } finally {
@@ -180,6 +211,14 @@ export function usePolishText() {
     return result;
   }, [diffOperations, acceptedOperations, rejectedOperations, polishedText]);
 
+  const handleHighlight = (index: number) => {
+    const operation = groupedOperations[index][0];
+    const groupId = operation.replaceId
+      ? 'r-' + operation.replaceId
+      : operation.id.toString();
+    setHighlightedGroupId(groupId);
+  };
+
   return {
     text,
     setText,
@@ -198,5 +237,14 @@ export function usePolishText() {
     handleRejectAll,
     handleCustomize,
     getFinalText,
+    isPolishMode,
+    setIsPolishMode,
+    polishStyle,
+    setPolishStyle,
+    polishTone,
+    setPolishTone,
+    resetState,
+    highlightedGroupId,
+    handleHighlight,
   };
 }

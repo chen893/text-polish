@@ -18,6 +18,7 @@ interface SuggestionItemProps {
   onAccept: () => void;
   onReject: () => void;
   onClick: () => void;
+  isHighlighted?: boolean;
 }
 
 export function SuggestionItem({
@@ -28,11 +29,13 @@ export function SuggestionItem({
   onAccept,
   onReject,
   onClick,
+  isHighlighted = false,
 }: SuggestionItemProps) {
   const mainOperation = operations[0];
+  const isReplaceOperation = operations.length > 1;
 
   const getOperationTypeText = () => {
-    if (operations.length > 1) {
+    if (isReplaceOperation) {
       return '替换';
     }
 
@@ -66,7 +69,8 @@ export function SuggestionItem({
         'group relative cursor-pointer rounded-lg border p-3 transition-all hover:bg-accent lg:p-4',
         isActive && 'bg-accent',
         isAccepted && 'border-green-500/50',
-        isRejected && 'border-red-500/50'
+        isRejected && 'border-red-500/50',
+        isHighlighted && 'ring-2 ring-primary'
       )}
       onClick={onClick}
     >
@@ -134,27 +138,31 @@ export function SuggestionItem({
         </div>
       </div>
       <div className="space-y-2 text-sm">
-        <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
-          <span className="shrink-0 font-medium">原文：</span>
-          <span className="break-all text-muted-foreground">
-            {getOriginalText()}
-          </span>
-        </div>
-        <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
-          <span className="shrink-0 font-medium">建议：</span>
-          <span
-            className={cn(
-              'break-all',
-              isAccepted
-                ? 'text-green-500'
-                : isRejected
-                  ? 'text-red-500/50 line-through'
-                  : 'text-green-500'
-            )}
-          >
-            {getNewText()}
-          </span>
-        </div>
+        {(isReplaceOperation || mainOperation.type === -1) && (
+          <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
+            <span className="shrink-0 font-medium">原文：</span>
+            <span className="break-all text-muted-foreground">
+              {getOriginalText()}
+            </span>
+          </div>
+        )}
+        {(isReplaceOperation || mainOperation.type === 1) && (
+          <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
+            <span className="shrink-0 font-medium">建议：</span>
+            <span
+              className={cn(
+                'break-all',
+                isAccepted
+                  ? 'text-green-500'
+                  : isRejected
+                    ? 'text-red-500/50 line-through'
+                    : 'text-green-500'
+              )}
+            >
+              {getNewText()}
+            </span>
+          </div>
+        )}
         <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
           <span className="shrink-0 font-medium">原因：</span>
           <span className="break-all text-muted-foreground">

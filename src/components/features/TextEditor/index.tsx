@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
@@ -10,12 +10,21 @@ import { Loader2, Sparkles, Copy, Check, X } from 'lucide-react';
 import { SuggestionItem } from './SuggestionItem';
 import { toast } from 'sonner';
 import { Toaster } from 'sonner';
-// import diff_match_patch from 'diff-match-patch';
 import { cn } from '@/lib/utils';
-import { DiffOperation } from '@/types/text';
+import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { DiffOperation, PolishStyle, PolishTone } from '@/types/text';
 
 export function TextEditor() {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const suggestionsContainerRef = useRef<HTMLDivElement>(null);
   const {
     text,
     setText,
@@ -33,12 +42,35 @@ export function TextEditor() {
     handleRejectAll,
     handleCustomize,
     getFinalText,
+    isPolishMode,
+    setIsPolishMode,
+    polishStyle,
+    setPolishStyle,
+    polishTone,
+    setPolishTone,
+    resetState,
+    highlightedGroupId,
+    handleHighlight,
   } = usePolishText();
+
+  const scrollToSuggestion = (index: number) => {
+    if (!suggestionsContainerRef.current) return;
+
+    const suggestionElements = suggestionsContainerRef.current.children;
+    if (index >= 0 && index < suggestionElements.length) {
+      suggestionElements[index].scrollIntoView({
+        behavior: 'smooth',
+        inline: 'nearest',
+        block: 'nearest',
+      });
+    }
+  };
 
   const handlePolish = async () => {
     if (!text.trim()) return;
-    await polish(text);
+    resetState();
     setActiveIndex(null);
+    await polish(text);
   };
 
   const handleCopy = async () => {
@@ -51,9 +83,27 @@ export function TextEditor() {
     }
   };
 
+  // 处理润色模式切换
+  const handlePolishModeChange = (checked: boolean) => {
+    // resetState();
+    setIsPolishMode(checked);
+  };
+
+  // 处理风格切换
+  const handleStyleChange = (value: string) => {
+    // resetState();
+    setPolishStyle(value as PolishStyle);
+  };
+
+  // 处理语气切换
+  const handleToneChange = (value: string) => {
+    // resetState();
+    setPolishTone(value as PolishTone);
+  };
+
   // 根据当前接受/拒绝状态生成实时的文本差异
   const renderCurrentDiff = () => {
-    const renderDiff = diffOperations.length > 0 ? diffs : diffOperations;
+    const renderDiff = diffOperations.length > 0 ? diffOperations : diffs;
 
     if (!renderDiff) return null;
 
@@ -65,6 +115,29 @@ export function TextEditor() {
       if (value.trim().length === 0) return null;
 
       const isRejected = rejectedOperations.has(id);
+      const groupId =
+        diffOperations.length > 0
+          ? (diff as DiffOperation).replaceId
+            ? 'r-' + (diff as DiffOperation).replaceId
+            : id.toString()
+          : '';
+      const isHighlighted = highlightedGroupId === groupId;
+
+      const handleClick = () => {
+        if (type === 0 || !groupId) return; // 不处理未修改的文本
+        // 找到对应的建议项索引
+        const groupIndex = groupedOperations.findIndex((group) => {
+          const mainOp = group[0];
+          const opGroupId = mainOp.replaceId
+            ? 'r-' + mainOp.replaceId
+            : mainOp.id.toString();
+          return opGroupId === groupId;
+        });
+        if (groupIndex !== -1) {
+          handleHighlight(groupIndex);
+          scrollToSuggestion(groupIndex);
+        }
+      };
 
       switch (type) {
         case -1: // 删除的文本
@@ -78,7 +151,11 @@ export function TextEditor() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               key={index}
-              className="rounded bg-red-100 px-1 text-red-900 dark:bg-red-900/30 dark:text-red-300"
+              onClick={handleClick}
+              className={cn(
+                'cursor-pointer rounded bg-red-100 px-1 text-red-900 dark:bg-red-900/30 dark:text-red-300',
+                isHighlighted && 'ring-2 ring-red-500'
+              )}
             >
               {value}
             </motion.del>
@@ -94,7 +171,11 @@ export function TextEditor() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               key={index}
-              className="rounded bg-green-100 px-1 text-green-900 no-underline dark:bg-green-900/30 dark:text-green-300"
+              onClick={handleClick}
+              className={cn(
+                'cursor-pointer rounded bg-green-100 px-1 text-green-900 no-underline dark:bg-green-900/30 dark:text-green-300',
+                isHighlighted && 'ring-2 ring-green-500'
+              )}
             >
               {value}
             </motion.ins>
@@ -115,6 +196,56 @@ export function TextEditor() {
       >
         <div className="space-y-6">
           <Card className="bg-white/80 p-4 shadow-lg backdrop-blur-md transition-all duration-300 hover:shadow-xl dark:bg-gray-950/80 lg:p-6">
+            <div className="mb-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="polish-mode" className="text-base">
+                  润色模式
+                </Label>
+                <Switch
+                  id="polish-mode"
+                  checked={isPolishMode}
+                  onCheckedChange={handlePolishModeChange}
+                />
+              </div>
+
+              {isPolishMode && (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>文本风格</Label>
+                    <Select
+                      value={polishStyle}
+                      onValueChange={handleStyleChange}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="选择文本风格" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="简单">简单</SelectItem>
+                        <SelectItem value="商业">商业</SelectItem>
+                        <SelectItem value="学术">学术</SelectItem>
+                        <SelectItem value="非正式">非正式</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>语气</Label>
+                    <Select value={polishTone} onValueChange={handleToneChange}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="选择语气" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="热情">热情</SelectItem>
+                        <SelectItem value="亲切">亲切</SelectItem>
+                        <SelectItem value="自信">自信</SelectItem>
+                        <SelectItem value="外交">外交</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <Textarea
               placeholder="请输入需要校对的文本..."
               value={text}
@@ -138,7 +269,7 @@ export function TextEditor() {
                 ) : (
                   <>
                     <Sparkles className="mr-2 h-4 w-4 group-hover:animate-pulse" />
-                    开始校对
+                    开始{isPolishMode ? '润色' : '校对'}
                   </>
                 )}
               </Button>
@@ -256,7 +387,7 @@ export function TextEditor() {
                     </Button>
                   </div>
                 </div>
-                <div className="space-y-4">
+                <div className="space-y-4" ref={suggestionsContainerRef}>
                   {groupedOperations.map((group, index) => {
                     const mainOp = group[0];
                     const isAccepted = group.every((op: DiffOperation) =>
@@ -265,6 +396,10 @@ export function TextEditor() {
                     const isRejected = group.every((op: DiffOperation) =>
                       rejectedOperations.has(op.id)
                     );
+                    const groupId = mainOp.replaceId
+                      ? 'r-' + mainOp.replaceId
+                      : mainOp.id.toString();
+                    const isHighlighted = highlightedGroupId === groupId;
 
                     return (
                       <SuggestionItem
@@ -275,7 +410,12 @@ export function TextEditor() {
                         isRejected={isRejected}
                         onAccept={() => handleAccept(index)}
                         onReject={() => handleReject(index)}
-                        onClick={() => setActiveIndex(index)}
+                        onClick={() => {
+                          setActiveIndex(index);
+                          handleHighlight(index);
+                          scrollToSuggestion(index);
+                        }}
+                        isHighlighted={isHighlighted}
                       />
                     );
                   })}
