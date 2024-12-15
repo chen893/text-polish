@@ -74,7 +74,7 @@ export async function getDiffOperations(
       },
     ],
     temperature: 0.7,
-    max_tokens: 10000,
+    max_tokens: 4096,
   });
   try {
     const obj = JSON.parse(response.choices[0]?.message?.content || '');
