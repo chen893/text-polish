@@ -330,7 +330,7 @@ export function TextEditor() {
                       </div>
                     </div>
                     <div className="rounded-lg border bg-card p-4 text-card-foreground shadow-sm">
-                      <div className="prose prose-sm max-w-none dark:prose-invert">
+                      <div className="prose prose-sm max-w-none whitespace-pre-wrap dark:prose-invert">
                         {getFinalText()}
                       </div>
                     </div>
@@ -346,7 +346,7 @@ export function TextEditor() {
                       </div>
                     </div>
                     <div className="rounded-lg border bg-card p-4 text-card-foreground shadow-sm">
-                      <div className="prose prose-sm max-w-none leading-relaxed dark:prose-invert">
+                      <div className="prose prose-sm max-w-none whitespace-pre-wrap leading-relaxed dark:prose-invert">
                         {renderCurrentDiff()}
                       </div>
                     </div>
