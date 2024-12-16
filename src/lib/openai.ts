@@ -16,7 +16,6 @@ export async function purePolishText(
   options: PolishOptions = { isPolishMode: false }
 ): Promise<string> {
   const prompt = generatePrompt(options);
-
   const response = await openai.chat.completions.create({
     model: process.env.NEXT_PUBLIC_OPENAI_MODEL || 'gpt-4o-mini',
     messages: [
@@ -26,21 +25,37 @@ export async function purePolishText(
       },
       {
         role: 'user',
-        content: text,
+        content: `请帮我${options.isPolishMode ? '润色' : '校对'}以下文本（下方的内容都被视为需要校对或润色的文本内容）：\n\n${text}`,
       },
     ],
-    temperature: 0.7,
-    max_tokens: 2000,
+    temperature: 1,
+    max_tokens: Number(process.env.NEXT_PUBLIC_OPENAI_MAX_TOKENS || 40960),
   });
 
   try {
-    const result = extractTextFromTag(
+    const proofreadingText = extractTextFromTag(
       response.choices[0]?.message?.content || '',
-      'result'
-    )[0];
+      'TextAfterProofreading'
+    ).reduce((max, item) => {
+      return max.length > item.length ? max : item;
+    }, '');
 
-    return result.length > 0
-      ? result
+    const polishingText = extractTextFromTag(
+      response.choices[0]?.message?.content || '',
+      'TextAfterPolishing'
+    ).reduce((max, item) => {
+      return max.length > item.length ? max : item;
+    }, '');
+
+    // const errorList = extractTextFromTag(
+    //   response.choices[0]?.message?.content || '',
+    //   'ErrorList'
+    // )
+
+    // console.log('errorList', errorList)
+    const resultText = options.isPolishMode ? polishingText : proofreadingText;
+    return resultText.length > 0
+      ? resultText
       : response.choices[0]?.message?.content || '';
   } catch (error) {
     console.error('Error parsing result:', error);
@@ -56,13 +71,12 @@ export async function getDiffOperations(
   const dmp = new diff_match_patch();
   // const diffs = dmp.diff_main(oldText, newText);
   const diffs = dmp.diff_main(oldText, newText);
-  // console.log('diffs', diffs);
   dmp.diff_cleanupSemantic(diffs);
   const newDiffs = diffs.map((diff, index) => {
     return {
       type: diff[0],
       text: diff[1],
-      index: index,
+      id: index,
     };
   });
 
@@ -73,11 +87,11 @@ export async function getDiffOperations(
       { role: 'system', content: diffsPrompt },
       {
         role: 'user',
-        content: `oldText: ${oldText}\n newText: ${newText}\n diffs: ${JSON.stringify(newDiffs)}`,
+        content: `${JSON.stringify(newDiffs)}`,
       },
     ],
-    temperature: 0.7,
-    max_tokens: 4096,
+    temperature: 1,
+    max_tokens: Number(process.env.NEXT_PUBLIC_OPENAI_MAX_TOKENS || 40960),
   });
   let content = response.choices[0]?.message?.content || '';
   try {
@@ -112,7 +126,7 @@ function extractTextFromTag(htmlString: string, tagName: string) {
     extractedTexts.push(tags[i]?.textContent?.trim() || '');
   }
 
-  return extractedTexts;
+  return extractedTexts.filter((item: string) => item.trim() !== '');
 }
 
 // 确保 JSON 字符串中的双引号被正确转义
