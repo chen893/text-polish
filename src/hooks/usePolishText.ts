@@ -1,7 +1,11 @@
 'use client';
 import { useState, useMemo, useCallback } from 'react';
 import diff_match_patch from 'diff-match-patch';
-import { purePolishText, getDiffOperations } from '@/lib/openai';
+import {
+  purePolishText,
+  longTextPolish,
+  getDiffOperations,
+} from '@/lib/openai';
 import {
   DiffOperation,
   PolishOptions,
@@ -74,7 +78,10 @@ export function usePolishText() {
       };
 
       // 获取润色后的文本
-      const polishedText = await purePolishText(inputText, options);
+      const polishedText =
+        inputText.length >= 1500
+          ? await longTextPolish(inputText, options)
+          : await purePolishText(inputText, options);
       setPolishedText(polishedText);
 
       const dmp = new diff_match_patch();
