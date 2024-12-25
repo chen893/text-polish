@@ -3,7 +3,7 @@ import { diffsPrompt, longTextSplitPrompt } from './prompt';
 import { DiffOperation, PolishOptions } from '@/types/text';
 import diff_match_patch from 'diff-match-patch';
 import { generatePrompt } from './prompt';
-import { splitTextByPoints } from './utils';
+// import { splitTextByPoints } from './utils';
 // import { splitTextToSentencesByLength } from './utils';
 
 const openai = new OpenAI({
@@ -109,9 +109,9 @@ export async function getDiffOperations(
 }
 
 export async function longTextPolish(
-  text: string,
-  options: PolishOptions = { isPolishMode: false }
-): Promise<string> {
+  text: string
+  // options: PolishOptions = { isPolishMode: false }
+): Promise<string[]> {
   const response = await openai.chat.completions.create({
     model: process.env.NEXT_PUBLIC_OPENAI_MODEL || 'gpt-4o-mini',
     messages: [
@@ -127,17 +127,17 @@ export async function longTextPolish(
       content = content.split('```json')[1].split('```')[0];
     }
     const obj = JSON.parse(content);
+    return obj.split_points || [];
     // console.log('obj', obj);
-    const splitTexts = splitTextByPoints(text, obj.split_points as string[]);
+
     // console.log('splitTexts', splitTexts);
-    const promises = splitTexts.map((item) => {
-      return purePolishText(item, options);
-    });
-    const results = await Promise.all(promises);
-    return results.join('');
+    // const promises = splitTexts.map((item) => {
+    // return purePolishText(item, options);
+    // });
+    // const results = await Promise.all(promises);
   } catch (error) {
     console.error('Error parsing JSON:', error);
-    return '';
+    return [''];
   } // return response.choices[0]?.message?.content || '';
 }
 

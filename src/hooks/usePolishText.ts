@@ -12,17 +12,28 @@ import {
   PolishStyle,
   PolishTone,
 } from '@/types/text';
+import { splitTextByPoints } from '@/lib/utils';
 
 export function usePolishText() {
+  // 到达长度要求的最大值
+  const MAX_LENGTH = 600;
+
   const [text, setText] = useState('');
+  // 分段后的文本
+  const [, setSegments] = useState<string[]>([]);
+  // 分段后的文本润色结果
+  // const [splitPolishedTexts, setSplitPolishedTexts] = useState<string[]>([]);
+
   const [isPolishing, setIsPolishing] = useState(false);
   const [isCustomizing, setIsCustomizing] = useState(false);
   const [diffs, setDiffs] = useState<diff_match_patch.Diff[]>();
   const [diffOperations, setDiffOperations] = useState<DiffOperation[]>([]);
   const [polishedText, setPolishedText] = useState<string>('');
+
   const [acceptedOperations, setAcceptedOperations] = useState<Set<number>>(
     new Set()
   );
+
   const [rejectedOperations, setRejectedOperations] = useState<Set<number>>(
     new Set()
   );
@@ -64,6 +75,157 @@ export function usePolishText() {
     return Array.from(groups.values());
   }, [diffOperations]);
 
+  // 清理段落文本，去除多余的换行符
+  const cleanParagraph = (paragraph: string): string => {
+    if (paragraph.startsWith('\n') && paragraph.endsWith('\n')) {
+      return paragraph.slice(1, -1);
+    } else if (paragraph.startsWith('\n')) {
+      return paragraph.slice(1);
+    } else if (paragraph.endsWith('\n')) {
+      return paragraph.slice(0, -1);
+    }
+    return paragraph;
+  };
+
+  // 处理单个段落的润色结果
+  const handlePolishedSegment = (
+    polishedSegment: string,
+    originalSegment: string,
+    previousText: string
+  ): {
+    updatedText: string;
+    newDiffs: diff_match_patch.Diff[];
+  } => {
+    const diffTool = new diff_match_patch();
+    const textDifferences = diffTool.diff_main(
+      originalSegment,
+      polishedSegment
+    );
+    diffTool.diff_cleanupSemantic(textDifferences);
+
+    return {
+      updatedText: previousText + polishedSegment,
+      newDiffs: textDifferences,
+    };
+  };
+
+  // 更新润色状态
+  const updatePolishState = (
+    originalContent: string,
+    newPolishedContent: string
+  ) => {
+    setPolishedText((previousText) => {
+      const { updatedText, newDiffs } = handlePolishedSegment(
+        newPolishedContent,
+        originalContent,
+        previousText
+      );
+
+      // 更新差异
+      setDiffs((prev) => {
+        return [...(prev || []), ...newDiffs];
+      });
+
+      return updatedText;
+    });
+  };
+
+  // 处理段落润色任务
+  const processPolishTask = async (
+    paragraph: string,
+    segmentIndex: number,
+    paragraphSegments: string[],
+    polishedSegments: string[],
+    lastProcessedIndex: { value: number },
+    polishOptions: PolishOptions
+  ): Promise<string> => {
+    const polishedParagraph = await purePolishText(paragraph, polishOptions);
+    polishedSegments[segmentIndex] = polishedParagraph;
+
+    // 找到最后一个已润色文本的索引
+    const lastCompletedIndex = polishedSegments.findLastIndex(
+      (segment) => segment !== undefined
+    );
+
+    if (lastProcessedIndex.value === segmentIndex - 1) {
+      let newPolishedContent = '';
+      let originalContent = '';
+      let currentProcessingIndex = lastProcessedIndex.value;
+
+      for (let i = lastProcessedIndex.value + 1; i <= lastCompletedIndex; i++) {
+        if (polishedSegments[i] !== undefined) {
+          newPolishedContent += polishedSegments[i];
+          originalContent += paragraphSegments[i];
+          currentProcessingIndex = i;
+        } else break;
+      }
+
+      lastProcessedIndex.value = currentProcessingIndex;
+      updatePolishState(originalContent, newPolishedContent);
+    }
+
+    return polishedParagraph;
+  };
+
+  const handleShortText = async (
+    inputText: string,
+    polishOptions: PolishOptions
+  ) => {
+    const polishedText = await purePolishText(inputText, polishOptions);
+
+    setPolishedText(polishedText);
+
+    const dmp = new diff_match_patch();
+    const computedDiffs = dmp.diff_main(inputText, polishedText);
+    dmp.diff_cleanupSemantic(computedDiffs);
+    setDiffs(computedDiffs);
+    return polishedText;
+  };
+
+  const handleLongText = async (
+    inputText: string,
+    polishOptions: PolishOptions
+  ) => {
+    // 1. 获取段落分割点
+    const paragraphBreakPoints = await longTextPolish(inputText);
+
+    if (paragraphBreakPoints.length === 0) {
+      return await handleShortText(inputText, polishOptions);
+    }
+
+    // 2. 分割并清理段落
+    const paragraphSegments =
+      splitTextByPoints(inputText, paragraphBreakPoints as string[])?.map(
+        cleanParagraph
+      ) || [];
+    setSegments(paragraphSegments);
+
+    // 3. 初始化状态
+    const lastProcessedIndex = { value: -1 };
+    const polishTasks: Promise<string>[] = new Array(paragraphSegments.length);
+    const polishedSegments: string[] = new Array(paragraphSegments.length);
+
+    // 4. 处理每个段落
+    paragraphSegments.forEach((paragraph, segmentIndex) => {
+      polishTasks.push(
+        processPolishTask(
+          paragraph,
+          segmentIndex,
+          paragraphSegments,
+          polishedSegments,
+          lastProcessedIndex,
+          polishOptions
+        )
+      );
+    });
+
+    // 5. 等待所有任务完成
+    await Promise.all(polishTasks);
+    setIsPolishing(false);
+
+    return polishedText;
+  };
+
   const polish = async (inputText: string) => {
     try {
       // 重置状态
@@ -78,16 +240,13 @@ export function usePolishText() {
       };
 
       // 获取润色后的文本
-      const polishedText =
-        inputText.length >= 1500
-          ? await longTextPolish(inputText, options)
-          : await purePolishText(inputText, options);
-      setPolishedText(polishedText);
+      if (inputText.length >= MAX_LENGTH) {
+        await handleLongText(inputText, options);
+      } else {
+        await handleShortText(inputText, options);
+      }
 
-      const dmp = new diff_match_patch();
-      const computedDiffs = dmp.diff_main(inputText, polishedText);
-      dmp.diff_cleanupSemantic(computedDiffs);
-      setDiffs(computedDiffs);
+      return;
     } catch (error) {
       console.error('Error polishing text:', error);
     } finally {
@@ -253,5 +412,6 @@ export function usePolishText() {
     resetState,
     highlightedGroupId,
     handleHighlight,
+    MAX_LENGTH,
   };
 }

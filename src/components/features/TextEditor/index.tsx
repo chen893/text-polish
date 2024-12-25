@@ -256,15 +256,15 @@ export function TextEditor() {
             <div className="flex items-center justify-between">
               <div className="text-sm text-muted-foreground">
                 字数：{text.length}
-                {text.length > 1000 && (
+                {text.length > 2000 && (
                   <span className="text-red-500">
-                    （体验版，字数限制1000字）
+                    （体验版，字数限制2000字）
                   </span>
                 )}
               </div>
               <Button
                 onClick={handlePolish}
-                disabled={isPolishing || !text.trim() || text.length > 1000}
+                disabled={isPolishing || !text.trim() || text.length > 2000}
                 className="group relative"
               >
                 {isPolishing ? (
