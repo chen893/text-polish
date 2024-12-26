@@ -21,8 +21,12 @@ export function usePolishText() {
   const [text, setText] = useState('');
   // 分段后的文本
   const [, setSegments] = useState<string[]>([]);
-  // 分段后的文本润色结果
-  // const [splitPolishedTexts, setSplitPolishedTexts] = useState<string[]>([]);
+  // 新增进度相关状态
+  const [progress, setProgress] = useState({
+    total: 0, // 总段落数
+    current: 0, // 当前处理的段落数
+    percentage: 0, // 处理进度百分比
+  });
 
   const [isPolishing, setIsPolishing] = useState(false);
   const [isCustomizing, setIsCustomizing] = useState(false);
@@ -52,6 +56,12 @@ export function usePolishText() {
     setAcceptedOperations(new Set());
     setRejectedOperations(new Set());
     setIsCustomizing(false);
+    // 重置进度
+    setProgress({
+      total: 0,
+      current: 0,
+      percentage: 0,
+    });
   }, []);
 
   // 按replaceId分组的操作
@@ -142,6 +152,16 @@ export function usePolishText() {
     const polishedParagraph = await purePolishText(paragraph, polishOptions);
     polishedSegments[segmentIndex] = polishedParagraph;
 
+    // 更新进度
+    setProgress((prev) => {
+      const current = prev.current + 1;
+      return {
+        ...prev,
+        current,
+        percentage: Math.round((current / prev.total) * 100),
+      };
+    });
+
     // 找到最后一个已润色文本的索引
     const lastCompletedIndex = polishedSegments.findLastIndex(
       (segment) => segment !== undefined
@@ -171,8 +191,12 @@ export function usePolishText() {
     inputText: string,
     polishOptions: PolishOptions
   ) => {
-    const polishedText = await purePolishText(inputText, polishOptions);
+    const polishedText = cleanParagraph(
+      await purePolishText(inputText, polishOptions)
+    );
 
+    console.log('inputText', inputText);
+    console.log('polishedText', polishedText);
     setPolishedText(polishedText);
 
     const dmp = new diff_match_patch();
@@ -199,6 +223,13 @@ export function usePolishText() {
         cleanParagraph
       ) || [];
     setSegments(paragraphSegments);
+
+    // 初始化进度
+    setProgress({
+      total: paragraphSegments.length,
+      current: 0,
+      percentage: 0,
+    });
 
     // 3. 初始化状态
     const lastProcessedIndex = { value: -1 };
@@ -413,5 +444,6 @@ export function usePolishText() {
     highlightedGroupId,
     handleHighlight,
     MAX_LENGTH,
+    progress, // 导出进度状态
   };
 }

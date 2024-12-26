@@ -31,8 +31,9 @@ export function TextEditor() {
     polish,
     isPolishing,
     isCustomizing,
-    diffOperations,
     diffs,
+    diffOperations,
+    // polishedText,
     groupedOperations,
     acceptedOperations,
     rejectedOperations,
@@ -51,6 +52,8 @@ export function TextEditor() {
     resetState,
     highlightedGroupId,
     handleHighlight,
+    MAX_LENGTH,
+    progress,
   } = usePolishText();
 
   const scrollToSuggestion = (index: number) => {
@@ -333,6 +336,23 @@ export function TextEditor() {
                       <div className="prose prose-sm max-w-none whitespace-pre-wrap dark:prose-invert">
                         {getFinalText()}
                       </div>
+                      {isPolishing && text.length >= MAX_LENGTH && (
+                        <div className="mt-4">
+                          <div className="flex items-center justify-between text-sm text-gray-500">
+                            <span>正在分段润色中...</span>
+                            <span>{progress.percentage}%</span>
+                          </div>
+                          <div className="mt-2 h-2 w-full rounded-full bg-gray-200">
+                            <div
+                              className="h-full rounded-full bg-primary transition-all duration-300"
+                              style={{ width: `${progress.percentage}%` }}
+                            />
+                          </div>
+                          <div className="mt-1 text-xs text-gray-500">
+                            已处理 {progress.current} / {progress.total} 段
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
