@@ -10,6 +10,10 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   title: '智能文本校对助手',
   description: '基于 AI 的智能文本校对和优化工具',
+  icons: {
+    icon: '/favicon.svg', // SVG favicon
+    shortcut: '/favicon.svg', // 为了兼容性
+  },
 };
 
 export default function RootLayout({

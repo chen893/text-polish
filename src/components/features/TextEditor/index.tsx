@@ -4,7 +4,6 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
-import { usePolishText } from '@/hooks/usePolishText';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, Sparkles, Copy, Check, X } from 'lucide-react';
 import { SuggestionItem } from './SuggestionItem';
@@ -33,7 +32,7 @@ export function TextEditor() {
   } | null>(null);
   const suggestionsContainerRef = useRef<HTMLDivElement>(null);
 
-  // 从 store 中获取状态
+  // 从 store 中获取状态和方法
   const {
     text,
     setText,
@@ -43,16 +42,13 @@ export function TextEditor() {
     setPolishStyle,
     polishTone,
     setPolishTone,
+    groupedOperations,
     highlightedGroupId,
-  } = useTextEditorStore();
-
-  const {
     polish,
     isPolishing,
     isCustomizing,
     diffs,
     diffOperations,
-    groupedOperations,
     acceptedOperations,
     rejectedOperations,
     handleAccept,
@@ -63,15 +59,13 @@ export function TextEditor() {
     getFinalText,
     resetState,
     handleHighlight,
-    MAX_LENGTH,
     progress,
-  } = usePolishText();
+  } = useTextEditorStore();
 
   const scrollToSuggestion = useCallback(
     (index: number) => {
       if (!suggestionsContainerRef.current) return;
-
-      // 计算当前组在过滤后列表中的位置
+      //计算当前组在过滤后列表中的位置
       const targetGroup = groupedOperations[index];
       if (!targetGroup) return;
 
@@ -290,7 +284,7 @@ export function TextEditor() {
   };
 
   return (
-    <div className={cn('container mx-auto min-h-screen px-4 py-6', 'lg:px-6')}>
+    <div className="container mx-auto min-h-screen px-4 py-6 lg:px-6">
       <div
         className={cn(
           'grid gap-6',
@@ -449,7 +443,7 @@ export function TextEditor() {
                       <div className="prose prose-sm max-w-none whitespace-pre-wrap dark:prose-invert">
                         {getFinalText()}
                       </div>
-                      {isPolishing && text.length >= MAX_LENGTH && (
+                      {isPolishing && text.length >= 600 && (
                         <div className="mt-4">
                           <div className="flex items-center justify-between text-sm text-gray-500">
                             <span>正在分段润色中...</span>
@@ -497,174 +491,175 @@ export function TextEditor() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3 }}
-              className="relative lg:h-[calc(100vh-3rem)]"
+              className="relative"
             >
-              <Card className="sticky top-6 h-full overflow-hidden bg-white/80 shadow-lg backdrop-blur-md transition-all duration-300 hover:shadow-xl dark:bg-gray-950/80">
-                <div className="absolute inset-x-0 top-0 z-10 border-b bg-white/80 p-4 backdrop-blur-sm dark:bg-gray-950/80">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <h3 className="text-lg font-semibold">
-                      修改建议 (
-                      {diffOperations.filter((op) => op.type !== 0).length})
-                    </h3>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 gap-1 sm:flex-none"
-                        onClick={handleAcceptAll}
-                      >
-                        <Check className="h-3 w-3" />
-                        全部接受
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 gap-1 sm:flex-none"
-                        onClick={handleRejectAll}
-                      >
-                        <X className="h-3 w-3" />
-                        全部拒绝
-                      </Button>
+              <div className="sticky top-6">
+                <Card className="max-h-[calc(100vh-3rem)] overflow-hidden bg-white/80 shadow-lg backdrop-blur-md transition-all duration-300 hover:shadow-xl dark:bg-gray-950/80">
+                  <div className="sticky top-0 z-10 border-b bg-white/80 p-4 backdrop-blur-sm dark:bg-gray-950/80">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <h3 className="text-lg font-semibold">
+                        修改建议 ({groupedOperations.length})
+                      </h3>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 gap-1 sm:flex-none"
+                          onClick={handleAcceptAll}
+                        >
+                          <Check className="h-3 w-3" />
+                          全部接受
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 gap-1 sm:flex-none"
+                          onClick={handleRejectAll}
+                        >
+                          <X className="h-3 w-3" />
+                          全部拒绝
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div
-                  className="scrollbar-thin scrollbar-track-transparent scrollbar-thumb-gray-200 hover:scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-700 dark:hover:scrollbar-thumb-gray-600 h-full overflow-y-auto pt-[88px]"
-                  ref={suggestionsContainerRef}
-                >
-                  <Tabs
-                    value={activeTab}
-                    onValueChange={setActiveTab}
-                    className="flex h-full flex-col"
+                  <div
+                    ref={suggestionsContainerRef}
+                    className="scrollbar-thin scrollbar-track-transparent scrollbar-thumb-gray-200 hover:scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-700 dark:hover:scrollbar-thumb-gray-600 max-h-[calc(100vh-12rem)] overflow-y-auto"
                   >
-                    <div className="sticky top-0 z-10 bg-white/80 px-4 backdrop-blur-sm dark:bg-gray-950/80">
-                      <TabsList className="w-full">
-                        <TabsTrigger value="pending" className="flex-1">
-                          待处理
-                          <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
-                            {
-                              groupedOperations.filter(
-                                (group) =>
-                                  !group.every(
+                    <Tabs
+                      value={activeTab}
+                      onValueChange={setActiveTab}
+                      className="flex h-full flex-col"
+                    >
+                      <div className="sticky top-0 z-10 bg-white/80 px-4 py-2 backdrop-blur-sm dark:bg-gray-950/80">
+                        <TabsList className="w-full">
+                          <TabsTrigger value="pending" className="flex-1">
+                            待处理
+                            <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                              {
+                                groupedOperations.filter(
+                                  (group) =>
+                                    !group.every(
+                                      (op) =>
+                                        acceptedOperations.has(op.id) ||
+                                        rejectedOperations.has(op.id)
+                                    )
+                                ).length
+                              }
+                            </span>
+                          </TabsTrigger>
+                          <TabsTrigger value="processed" className="flex-1">
+                            已处理
+                            <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                              {
+                                groupedOperations.filter((group) =>
+                                  group.every(
                                     (op) =>
                                       acceptedOperations.has(op.id) ||
                                       rejectedOperations.has(op.id)
                                   )
-                              ).length
-                            }
-                          </span>
-                        </TabsTrigger>
-                        <TabsTrigger value="processed" className="flex-1">
-                          已处理
-                          <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
-                            {
-                              groupedOperations.filter((group) =>
-                                group.every(
+                                ).length
+                              }
+                            </span>
+                          </TabsTrigger>
+                        </TabsList>
+                      </div>
+
+                      <div className="flex-1 px-4 pb-4">
+                        <TabsContent
+                          value="pending"
+                          className="mt-4 space-y-4 data-[state=inactive]:hidden"
+                        >
+                          {groupedOperations
+                            .filter(
+                              (group) =>
+                                !group.every(
                                   (op) =>
                                     acceptedOperations.has(op.id) ||
                                     rejectedOperations.has(op.id)
                                 )
-                              ).length
-                            }
-                          </span>
-                        </TabsTrigger>
-                      </TabsList>
-                    </div>
+                            )
+                            .map((group) => {
+                              const mainOp = group[0];
+                              const groupId = mainOp.replaceId
+                                ? 'r-' + mainOp.replaceId
+                                : mainOp.id.toString();
+                              const isHighlighted =
+                                highlightedGroupId === groupId;
+                              const originalIndex = groupedOperations.findIndex(
+                                (g) => g[0].id === mainOp.id
+                              );
 
-                    <div className="flex-1 px-4 pb-4">
-                      <TabsContent
-                        value="pending"
-                        className="mt-4 space-y-4 data-[state=inactive]:hidden"
-                      >
-                        {groupedOperations
-                          .filter(
-                            (group) =>
-                              !group.every(
+                              return (
+                                <SuggestionItem
+                                  key={mainOp.replaceId ?? mainOp.id}
+                                  operations={group}
+                                  isActive={activeIndex === originalIndex}
+                                  isAccepted={false}
+                                  isRejected={false}
+                                  onAccept={() => handleAccept(originalIndex)}
+                                  onReject={() => handleReject(originalIndex)}
+                                  onClick={() => {
+                                    handleDiffClick(originalIndex);
+                                  }}
+                                  isHighlighted={isHighlighted}
+                                />
+                              );
+                            })}
+                        </TabsContent>
+
+                        <TabsContent
+                          value="processed"
+                          className="mt-4 space-y-4 data-[state=inactive]:hidden"
+                        >
+                          {groupedOperations
+                            .filter((group) =>
+                              group.every(
                                 (op) =>
                                   acceptedOperations.has(op.id) ||
                                   rejectedOperations.has(op.id)
                               )
-                          )
-                          .map((group) => {
-                            const mainOp = group[0];
-                            const groupId = mainOp.replaceId
-                              ? 'r-' + mainOp.replaceId
-                              : mainOp.id.toString();
-                            const isHighlighted =
-                              highlightedGroupId === groupId;
-                            const originalIndex = groupedOperations.findIndex(
-                              (g) => g[0].id === mainOp.id
-                            );
-
-                            return (
-                              <SuggestionItem
-                                key={mainOp.replaceId ?? mainOp.id}
-                                operations={group}
-                                isActive={activeIndex === originalIndex}
-                                isAccepted={false}
-                                isRejected={false}
-                                onAccept={() => handleAccept(originalIndex)}
-                                onReject={() => handleReject(originalIndex)}
-                                onClick={() => {
-                                  handleDiffClick(originalIndex);
-                                }}
-                                isHighlighted={isHighlighted}
-                              />
-                            );
-                          })}
-                      </TabsContent>
-
-                      <TabsContent
-                        value="processed"
-                        className="mt-4 space-y-4 data-[state=inactive]:hidden"
-                      >
-                        {groupedOperations
-                          .filter((group) =>
-                            group.every(
-                              (op) =>
-                                acceptedOperations.has(op.id) ||
-                                rejectedOperations.has(op.id)
                             )
-                          )
-                          .map((group) => {
-                            const mainOp = group[0];
-                            const isAccepted = group.every((op) =>
-                              acceptedOperations.has(op.id)
-                            );
-                            const isRejected = group.every((op) =>
-                              rejectedOperations.has(op.id)
-                            );
-                            const groupId = mainOp.replaceId
-                              ? 'r-' + mainOp.replaceId
-                              : mainOp.id.toString();
-                            const isHighlighted =
-                              highlightedGroupId === groupId;
-                            const originalIndex = groupedOperations.findIndex(
-                              (g) => g[0].id === mainOp.id
-                            );
+                            .map((group) => {
+                              const mainOp = group[0];
+                              const isAccepted = group.every((op) =>
+                                acceptedOperations.has(op.id)
+                              );
+                              const isRejected = group.every((op) =>
+                                rejectedOperations.has(op.id)
+                              );
+                              const groupId = mainOp.replaceId
+                                ? 'r-' + mainOp.replaceId
+                                : mainOp.id.toString();
+                              const isHighlighted =
+                                highlightedGroupId === groupId;
+                              const originalIndex = groupedOperations.findIndex(
+                                (g) => g[0].id === mainOp.id
+                              );
 
-                            return (
-                              <SuggestionItem
-                                key={mainOp.replaceId ?? mainOp.id}
-                                operations={group}
-                                isActive={activeIndex === originalIndex}
-                                isAccepted={isAccepted}
-                                isRejected={isRejected}
-                                onAccept={() => handleAccept(originalIndex)}
-                                onReject={() => handleReject(originalIndex)}
-                                onClick={() => {
-                                  handleDiffClick(originalIndex);
-                                }}
-                                isHighlighted={isHighlighted}
-                              />
-                            );
-                          })}
-                      </TabsContent>
-                    </div>
-                  </Tabs>
-                </div>
-              </Card>
+                              return (
+                                <SuggestionItem
+                                  key={mainOp.replaceId ?? mainOp.id}
+                                  operations={group}
+                                  isActive={activeIndex === originalIndex}
+                                  isAccepted={isAccepted}
+                                  isRejected={isRejected}
+                                  onAccept={() => handleAccept(originalIndex)}
+                                  onReject={() => handleReject(originalIndex)}
+                                  onClick={() => {
+                                    handleDiffClick(originalIndex);
+                                  }}
+                                  isHighlighted={isHighlighted}
+                                />
+                              );
+                            })}
+                        </TabsContent>
+                      </div>
+                    </Tabs>
+                  </div>
+                </Card>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
