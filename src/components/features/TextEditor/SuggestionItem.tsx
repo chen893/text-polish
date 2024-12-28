@@ -73,6 +73,11 @@ export function SuggestionItem({
         isHighlighted && 'ring-2 ring-primary'
       )}
       onClick={onClick}
+      data-group-id={
+        operations[0].replaceId
+          ? 'r-' + operations[0].replaceId
+          : operations[0].id.toString()
+      }
     >
       <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:mb-4">
         <div className="flex flex-wrap items-center gap-2">

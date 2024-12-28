@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
@@ -20,20 +20,38 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { useTextEditorStore } from '@/store/useTextEditorStore';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DiffOperation, PolishStyle, PolishTone } from '@/types/text';
 
 export function TextEditor() {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState('pending');
+  const [pendingScroll, setPendingScroll] = useState<{
+    index: number;
+    targetTab: string;
+  } | null>(null);
   const suggestionsContainerRef = useRef<HTMLDivElement>(null);
+
+  // 从 store 中获取状态
   const {
     text,
     setText,
+    isPolishMode,
+    setIsPolishMode,
+    polishStyle,
+    setPolishStyle,
+    polishTone,
+    setPolishTone,
+    highlightedGroupId,
+  } = useTextEditorStore();
+
+  const {
     polish,
     isPolishing,
     isCustomizing,
     diffs,
     diffOperations,
-    // polishedText,
     groupedOperations,
     acceptedOperations,
     rejectedOperations,
@@ -43,31 +61,68 @@ export function TextEditor() {
     handleRejectAll,
     handleCustomize,
     getFinalText,
-    isPolishMode,
-    setIsPolishMode,
-    polishStyle,
-    setPolishStyle,
-    polishTone,
-    setPolishTone,
     resetState,
-    highlightedGroupId,
     handleHighlight,
     MAX_LENGTH,
     progress,
   } = usePolishText();
 
-  const scrollToSuggestion = (index: number) => {
-    if (!suggestionsContainerRef.current) return;
+  const scrollToSuggestion = useCallback(
+    (index: number) => {
+      if (!suggestionsContainerRef.current) return;
 
-    const suggestionElements = suggestionsContainerRef.current.children;
-    if (index >= 0 && index < suggestionElements.length) {
-      suggestionElements[index].scrollIntoView({
-        behavior: 'smooth',
-        inline: 'nearest',
-        block: 'nearest',
-      });
-    }
-  };
+      // 计算当前组在过滤后列表中的位置
+      const targetGroup = groupedOperations[index];
+      if (!targetGroup) return;
+
+      const isProcessed = targetGroup.every(
+        (op) => acceptedOperations.has(op.id) || rejectedOperations.has(op.id)
+      );
+
+      // 确保我们在正确的 tab 中 - 修复判断逻辑
+      const expectedTab = isProcessed ? 'processed' : 'pending';
+      if (expectedTab !== activeTab) {
+        return;
+      }
+
+      // 使用 data-group-id 直接查找目标元素
+      const groupId = targetGroup[0].replaceId
+        ? 'r-' + targetGroup[0].replaceId
+        : targetGroup[0].id.toString();
+
+      // 等待一下确保 DOM 已更新
+      setTimeout(() => {
+        const targetElement = suggestionsContainerRef.current?.querySelector(
+          `[data-group-id="${groupId}"]`
+        );
+
+        if (targetElement) {
+          // 获取容器和目标元素的位置信息
+          const container = suggestionsContainerRef.current!;
+          const containerRect = container.getBoundingClientRect();
+          const targetRect = targetElement.getBoundingClientRect();
+
+          // 计算目标元素相对于容器的位置
+          const targetTop = targetRect.top - containerRect.top;
+          const containerVisibleHeight = container.clientHeight;
+
+          // 计算理想的滚动位置（将目标元素放在容器的中间）
+          const scrollTop =
+            container.scrollTop +
+            targetTop -
+            containerVisibleHeight / 2 +
+            targetRect.height / 2;
+
+          // 平滑滚动到计算出的位置
+          container.scrollTo({
+            top: scrollTop,
+            behavior: 'smooth',
+          });
+        }
+      }, 100);
+    },
+    [activeTab, groupedOperations, acceptedOperations, rejectedOperations]
+  );
 
   const handlePolish = async () => {
     if (!text.trim()) return;
@@ -89,21 +144,65 @@ export function TextEditor() {
 
   // 处理润色模式切换
   const handlePolishModeChange = (checked: boolean) => {
-    // resetState();
     setIsPolishMode(checked);
   };
 
   // 处理风格切换
-  const handleStyleChange = (value: string) => {
-    // resetState();
-    setPolishStyle(value as PolishStyle);
+  const handleStyleChange = (value: PolishStyle) => {
+    setPolishStyle(value);
   };
 
   // 处理语气切换
-  const handleToneChange = (value: string) => {
-    // resetState();
-    setPolishTone(value as PolishTone);
+  const handleToneChange = (value: PolishTone) => {
+    setPolishTone(value);
   };
+
+  // 使用 useEffect 来处理滚动
+  useEffect(() => {
+    if (pendingScroll && pendingScroll.targetTab === activeTab) {
+      const timeoutId = setTimeout(() => {
+        scrollToSuggestion(pendingScroll.index);
+        setPendingScroll(null);
+      }, 300);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [pendingScroll, activeTab, scrollToSuggestion]);
+
+  // 在文本对比中点击时的处理函数
+  const handleDiffClick = useCallback(
+    (groupIndex: number) => {
+      if (groupIndex === -1) return;
+
+      // 判断该建议是否已处理
+      const group = groupedOperations[groupIndex];
+      const isProcessed = group.every(
+        (op) => acceptedOperations.has(op.id) || rejectedOperations.has(op.id)
+      );
+
+      // 设置高亮
+      handleHighlight(groupIndex);
+      setActiveIndex(groupIndex);
+
+      // 如果需要切换 tab
+      const targetTab = isProcessed ? 'processed' : 'pending';
+      if (targetTab !== activeTab) {
+        setActiveTab(targetTab);
+        setPendingScroll({ index: groupIndex, targetTab });
+      } else {
+        // 同一个 tab 内直接滚动
+        scrollToSuggestion(groupIndex);
+      }
+    },
+    [
+      activeTab,
+      groupedOperations,
+      acceptedOperations,
+      rejectedOperations,
+      handleHighlight,
+      scrollToSuggestion,
+    ]
+  );
 
   // 根据当前接受/拒绝状态生成实时的文本差异
   const renderCurrentDiff = () => {
@@ -137,16 +236,16 @@ export function TextEditor() {
             : mainOp.id.toString();
           return opGroupId === groupId;
         });
+
         if (groupIndex !== -1) {
-          handleHighlight(groupIndex);
-          scrollToSuggestion(groupIndex);
+          handleDiffClick(groupIndex);
         }
       };
 
       switch (type) {
         case -1: // 删除的文本
           if (isRejected) {
-            // 被拒绝的删除操作，直接显示原文本，不添加任何样式
+            // 被拒绝的删除操作，直接显示原文本不添加任何样式
             return <span key={index}>{value}</span>;
           }
           // 被接受的删除操作，显示删除状态
@@ -184,7 +283,7 @@ export function TextEditor() {
               {value}
             </motion.ins>
           );
-        default: // 未变化的文本
+        default: // 未化的文本
           return <span key={index}>{value}</span>;
       }
     });
@@ -195,7 +294,7 @@ export function TextEditor() {
       <div
         className={cn(
           'grid gap-6',
-          diffOperations.length > 0 ? 'lg:grid-cols-[1fr,320px]' : 'grid-cols-1'
+          diffOperations.length > 0 ? 'lg:grid-cols-[1fr,360px]' : 'grid-cols-1'
         )}
       >
         <div className="space-y-6">
@@ -224,10 +323,16 @@ export function TextEditor() {
                         <SelectValue placeholder="选择文本风格" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="简单">简单</SelectItem>
-                        <SelectItem value="商业">商业</SelectItem>
-                        <SelectItem value="学术">学术</SelectItem>
-                        <SelectItem value="非正式">非正式</SelectItem>
+                        <SelectItem value={PolishStyle.Simple}>简单</SelectItem>
+                        <SelectItem value={PolishStyle.Business}>
+                          商业
+                        </SelectItem>
+                        <SelectItem value={PolishStyle.Academic}>
+                          学术
+                        </SelectItem>
+                        <SelectItem value={PolishStyle.Informal}>
+                          非正式
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -239,10 +344,18 @@ export function TextEditor() {
                         <SelectValue placeholder="选择语气" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="热情">热情</SelectItem>
-                        <SelectItem value="亲切">亲切</SelectItem>
-                        <SelectItem value="自信">自信</SelectItem>
-                        <SelectItem value="外交">外交</SelectItem>
+                        <SelectItem value={PolishTone.Enthusiastic}>
+                          热情
+                        </SelectItem>
+                        <SelectItem value={PolishTone.Friendly}>
+                          亲切
+                        </SelectItem>
+                        <SelectItem value={PolishTone.Confident}>
+                          自信
+                        </SelectItem>
+                        <SelectItem value={PolishTone.Diplomatic}>
+                          外交
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -384,67 +497,172 @@ export function TextEditor() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3 }}
-              className="space-y-4"
+              className="relative lg:h-[calc(100vh-3rem)]"
             >
-              <Card className="sticky top-6 max-h-[calc(100vh-3rem)] overflow-y-auto bg-white/80 p-4 shadow-lg backdrop-blur-md dark:bg-gray-950/80">
-                <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <h3 className="text-lg font-semibold">
-                    修改建议 (
-                    {diffOperations.filter((op) => op.type !== 0).length})
-                  </h3>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 gap-1 sm:flex-none"
-                      onClick={handleAcceptAll}
-                    >
-                      <Check className="h-3 w-3" />
-                      全部接受
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 gap-1 sm:flex-none"
-                      onClick={handleRejectAll}
-                    >
-                      <X className="h-3 w-3" />
-                      全部拒绝
-                    </Button>
+              <Card className="sticky top-6 h-full overflow-hidden bg-white/80 shadow-lg backdrop-blur-md transition-all duration-300 hover:shadow-xl dark:bg-gray-950/80">
+                <div className="absolute inset-x-0 top-0 z-10 border-b bg-white/80 p-4 backdrop-blur-sm dark:bg-gray-950/80">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <h3 className="text-lg font-semibold">
+                      修改建议 (
+                      {diffOperations.filter((op) => op.type !== 0).length})
+                    </h3>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 gap-1 sm:flex-none"
+                        onClick={handleAcceptAll}
+                      >
+                        <Check className="h-3 w-3" />
+                        全部接受
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 gap-1 sm:flex-none"
+                        onClick={handleRejectAll}
+                      >
+                        <X className="h-3 w-3" />
+                        全部拒绝
+                      </Button>
+                    </div>
                   </div>
                 </div>
-                <div className="space-y-4" ref={suggestionsContainerRef}>
-                  {groupedOperations.map((group, index) => {
-                    const mainOp = group[0];
-                    const isAccepted = group.every((op: DiffOperation) =>
-                      acceptedOperations.has(op.id)
-                    );
-                    const isRejected = group.every((op: DiffOperation) =>
-                      rejectedOperations.has(op.id)
-                    );
-                    const groupId = mainOp.replaceId
-                      ? 'r-' + mainOp.replaceId
-                      : mainOp.id.toString();
-                    const isHighlighted = highlightedGroupId === groupId;
 
-                    return (
-                      <SuggestionItem
-                        key={mainOp.replaceId ?? mainOp.id}
-                        operations={group}
-                        isActive={activeIndex === index}
-                        isAccepted={isAccepted}
-                        isRejected={isRejected}
-                        onAccept={() => handleAccept(index)}
-                        onReject={() => handleReject(index)}
-                        onClick={() => {
-                          setActiveIndex(index);
-                          handleHighlight(index);
-                          scrollToSuggestion(index);
-                        }}
-                        isHighlighted={isHighlighted}
-                      />
-                    );
-                  })}
+                <div
+                  className="scrollbar-thin scrollbar-track-transparent scrollbar-thumb-gray-200 hover:scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-700 dark:hover:scrollbar-thumb-gray-600 h-full overflow-y-auto pt-[88px]"
+                  ref={suggestionsContainerRef}
+                >
+                  <Tabs
+                    value={activeTab}
+                    onValueChange={setActiveTab}
+                    className="flex h-full flex-col"
+                  >
+                    <div className="sticky top-0 z-10 bg-white/80 px-4 backdrop-blur-sm dark:bg-gray-950/80">
+                      <TabsList className="w-full">
+                        <TabsTrigger value="pending" className="flex-1">
+                          待处理
+                          <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                            {
+                              groupedOperations.filter(
+                                (group) =>
+                                  !group.every(
+                                    (op) =>
+                                      acceptedOperations.has(op.id) ||
+                                      rejectedOperations.has(op.id)
+                                  )
+                              ).length
+                            }
+                          </span>
+                        </TabsTrigger>
+                        <TabsTrigger value="processed" className="flex-1">
+                          已处理
+                          <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                            {
+                              groupedOperations.filter((group) =>
+                                group.every(
+                                  (op) =>
+                                    acceptedOperations.has(op.id) ||
+                                    rejectedOperations.has(op.id)
+                                )
+                              ).length
+                            }
+                          </span>
+                        </TabsTrigger>
+                      </TabsList>
+                    </div>
+
+                    <div className="flex-1 px-4 pb-4">
+                      <TabsContent
+                        value="pending"
+                        className="mt-4 space-y-4 data-[state=inactive]:hidden"
+                      >
+                        {groupedOperations
+                          .filter(
+                            (group) =>
+                              !group.every(
+                                (op) =>
+                                  acceptedOperations.has(op.id) ||
+                                  rejectedOperations.has(op.id)
+                              )
+                          )
+                          .map((group) => {
+                            const mainOp = group[0];
+                            const groupId = mainOp.replaceId
+                              ? 'r-' + mainOp.replaceId
+                              : mainOp.id.toString();
+                            const isHighlighted =
+                              highlightedGroupId === groupId;
+                            const originalIndex = groupedOperations.findIndex(
+                              (g) => g[0].id === mainOp.id
+                            );
+
+                            return (
+                              <SuggestionItem
+                                key={mainOp.replaceId ?? mainOp.id}
+                                operations={group}
+                                isActive={activeIndex === originalIndex}
+                                isAccepted={false}
+                                isRejected={false}
+                                onAccept={() => handleAccept(originalIndex)}
+                                onReject={() => handleReject(originalIndex)}
+                                onClick={() => {
+                                  handleDiffClick(originalIndex);
+                                }}
+                                isHighlighted={isHighlighted}
+                              />
+                            );
+                          })}
+                      </TabsContent>
+
+                      <TabsContent
+                        value="processed"
+                        className="mt-4 space-y-4 data-[state=inactive]:hidden"
+                      >
+                        {groupedOperations
+                          .filter((group) =>
+                            group.every(
+                              (op) =>
+                                acceptedOperations.has(op.id) ||
+                                rejectedOperations.has(op.id)
+                            )
+                          )
+                          .map((group) => {
+                            const mainOp = group[0];
+                            const isAccepted = group.every((op) =>
+                              acceptedOperations.has(op.id)
+                            );
+                            const isRejected = group.every((op) =>
+                              rejectedOperations.has(op.id)
+                            );
+                            const groupId = mainOp.replaceId
+                              ? 'r-' + mainOp.replaceId
+                              : mainOp.id.toString();
+                            const isHighlighted =
+                              highlightedGroupId === groupId;
+                            const originalIndex = groupedOperations.findIndex(
+                              (g) => g[0].id === mainOp.id
+                            );
+
+                            return (
+                              <SuggestionItem
+                                key={mainOp.replaceId ?? mainOp.id}
+                                operations={group}
+                                isActive={activeIndex === originalIndex}
+                                isAccepted={isAccepted}
+                                isRejected={isRejected}
+                                onAccept={() => handleAccept(originalIndex)}
+                                onReject={() => handleReject(originalIndex)}
+                                onClick={() => {
+                                  handleDiffClick(originalIndex);
+                                }}
+                                isHighlighted={isHighlighted}
+                              />
+                            );
+                          })}
+                      </TabsContent>
+                    </div>
+                  </Tabs>
                 </div>
               </Card>
             </motion.div>

@@ -8,14 +8,27 @@ export interface DiffOperation {
   replaceId?: number;
 }
 
+// 文本风格枚举
+export enum PolishStyle {
+  Simple = '简单',
+  Business = '商业',
+  Academic = '学术',
+  Informal = '非正式',
+}
+
+// 语气枚举
+export enum PolishTone {
+  Enthusiastic = '热情',
+  Friendly = '亲切',
+  Confident = '自信',
+  Diplomatic = '外交',
+}
+
 export interface PolishOptions {
   isPolishMode: boolean;
   style?: PolishStyle;
   tone?: PolishTone;
 }
-
-export type PolishStyle = '简单' | '商业' | '学术' | '非正式';
-export type PolishTone = '热情' | '亲切' | '自信' | '外交';
 
 export const diff = {
   newDiffs: [

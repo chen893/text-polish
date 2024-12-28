@@ -1,89 +1,46 @@
 'use client';
-import { useState, useMemo, useCallback } from 'react';
+import { useCallback } from 'react';
 import diff_match_patch from 'diff-match-patch';
 import {
   purePolishText,
   longTextPolish,
   getDiffOperations,
 } from '@/lib/openai';
-import {
-  DiffOperation,
-  PolishOptions,
-  PolishStyle,
-  PolishTone,
-} from '@/types/text';
+import { DiffOperation, PolishOptions } from '@/types/text';
 import { splitTextByPoints } from '@/lib/utils';
+import { useTextEditorStore } from '@/store/useTextEditorStore';
 
 export function usePolishText() {
   // 到达长度要求的最大值
   const MAX_LENGTH = 600;
 
-  const [text, setText] = useState('');
-  // 分段后的文本
-  const [, setSegments] = useState<string[]>([]);
-  // 新增进度相关状态
-  const [progress, setProgress] = useState({
-    total: 0, // 总段落数
-    current: 0, // 当前处理的段落数
-    percentage: 0, // 处理进度百分比
-  });
-
-  const [isPolishing, setIsPolishing] = useState(false);
-  const [isCustomizing, setIsCustomizing] = useState(false);
-  const [diffs, setDiffs] = useState<diff_match_patch.Diff[]>();
-  const [diffOperations, setDiffOperations] = useState<DiffOperation[]>([]);
-  const [polishedText, setPolishedText] = useState<string>('');
-
-  const [acceptedOperations, setAcceptedOperations] = useState<Set<number>>(
-    new Set()
-  );
-
-  const [rejectedOperations, setRejectedOperations] = useState<Set<number>>(
-    new Set()
-  );
-  const [isPolishMode, setIsPolishMode] = useState(false);
-  const [polishStyle, setPolishStyle] = useState<PolishStyle>();
-  const [polishTone, setPolishTone] = useState<PolishTone>();
-  const [highlightedGroupId, setHighlightedGroupId] = useState<string | null>(
-    null
-  );
-
-  // 重置所有状态
-  const resetState = useCallback(() => {
-    setDiffs(undefined);
-    setDiffOperations([]);
-    setPolishedText('');
-    setAcceptedOperations(new Set());
-    setRejectedOperations(new Set());
-    setIsCustomizing(false);
-    // 重置进度
-    setProgress({
-      total: 0,
-      current: 0,
-      percentage: 0,
-    });
-  }, []);
-
-  // 按replaceId分组的操作
-  const groupedOperations: DiffOperation[][] = useMemo(() => {
-    const groups = new Map<number | string, DiffOperation[]>();
-
-    diffOperations.forEach((op) => {
-      if (op.type === 0) return; // 跳过无变化的操作
-      const newReplaceId = 'r-' + op.replaceId;
-      if (op.replaceId !== undefined) {
-        if (!groups.has(newReplaceId)) {
-          groups.set(newReplaceId, []);
-        }
-        groups.get(newReplaceId)?.push(op);
-      } else {
-        groups.set(op.id, [op]);
-      }
-    });
-
-    // console.log('groupedOperations', groups.values());
-    return Array.from(groups.values());
-  }, [diffOperations]);
+  // 从 store 中获取状态和方法
+  const {
+    text,
+    setText,
+    setSegments,
+    progress,
+    setProgress,
+    isPolishing,
+    setIsPolishing,
+    isCustomizing,
+    setIsCustomizing,
+    diffs,
+    setDiffs,
+    diffOperations,
+    setDiffOperations,
+    polishedText,
+    setPolishedText,
+    acceptedOperations,
+    setAcceptedOperations,
+    rejectedOperations,
+    setRejectedOperations,
+    isPolishMode,
+    polishStyle,
+    polishTone,
+    setHighlightedGroupId,
+    resetState,
+  } = useTextEditorStore();
 
   // 清理段落文本，去除多余的换行符
   const cleanParagraph = (paragraph: string): string => {
@@ -124,19 +81,26 @@ export function usePolishText() {
     originalContent: string,
     newPolishedContent: string
   ) => {
-    setPolishedText((previousText) => {
-      const { updatedText, newDiffs } = handlePolishedSegment(
-        newPolishedContent,
-        originalContent,
-        previousText
-      );
+    const { updatedText, newDiffs } = handlePolishedSegment(
+      newPolishedContent,
+      originalContent,
+      polishedText
+    );
 
-      // 更新差异
-      setDiffs((prev) => {
-        return [...(prev || []), ...newDiffs];
-      });
+    // 更新差异
+    const currentDiffs = diffs || [];
+    setDiffs([...currentDiffs, ...newDiffs]);
 
-      return updatedText;
+    // 更新润色后的文本
+    setPolishedText(updatedText);
+  };
+
+  // 更新进度
+  const updateProgress = (current: number, total: number) => {
+    setProgress({
+      total,
+      current,
+      percentage: Math.round((current / total) * 100),
     });
   };
 
@@ -153,14 +117,8 @@ export function usePolishText() {
     polishedSegments[segmentIndex] = polishedParagraph;
 
     // 更新进度
-    setProgress((prev) => {
-      const current = prev.current + 1;
-      return {
-        ...prev,
-        current,
-        percentage: Math.round((current / prev.total) * 100),
-      };
-    });
+    const current = progress.current + 1;
+    updateProgress(current, progress.total);
 
     // 找到最后一个已润色文本的索引
     const lastCompletedIndex = polishedSegments.findLastIndex(
@@ -195,8 +153,6 @@ export function usePolishText() {
       await purePolishText(inputText, polishOptions)
     );
 
-    console.log('inputText', inputText);
-    console.log('polishedText', polishedText);
     setPolishedText(polishedText);
 
     const dmp = new diff_match_patch();
@@ -217,11 +173,9 @@ export function usePolishText() {
       return await handleShortText(inputText, polishOptions);
     }
 
-    // 2. 分割并清理段落
+    // 2. 分割清理段落
     const paragraphSegments =
-      splitTextByPoints(inputText, paragraphBreakPoints as string[])?.map(
-        cleanParagraph
-      ) || [];
+      splitTextByPoints(inputText, paragraphBreakPoints as string[]) || [];
     setSegments(paragraphSegments);
 
     // 初始化进度
@@ -321,17 +275,15 @@ export function usePolishText() {
       idsToAccept.add(operation.id);
     }
 
-    setAcceptedOperations((prev) => {
-      const next = new Set(prev);
-      idsToAccept.forEach((id) => next.add(id));
-      return next;
-    });
+    // 更新接受的操作
+    const newAccepted = new Set(acceptedOperations);
+    idsToAccept.forEach((id) => newAccepted.add(id));
+    setAcceptedOperations(newAccepted);
 
-    setRejectedOperations((prev) => {
-      const next = new Set(prev);
-      idsToAccept.forEach((id) => next.delete(id));
-      return next;
-    });
+    // 更新拒绝的操作
+    const newRejected = new Set(rejectedOperations);
+    idsToAccept.forEach((id) => newRejected.delete(id));
+    setRejectedOperations(newRejected);
   };
 
   const handleReject = (index: number) => {
@@ -349,17 +301,15 @@ export function usePolishText() {
       idsToReject.add(operation.id);
     }
 
-    setRejectedOperations((prev) => {
-      const next = new Set(prev);
-      idsToReject.forEach((id) => next.add(id));
-      return next;
-    });
+    // 更新拒绝的操作
+    const newRejected = new Set(rejectedOperations);
+    idsToReject.forEach((id) => newRejected.add(id));
+    setRejectedOperations(newRejected);
 
-    setAcceptedOperations((prev) => {
-      const next = new Set(prev);
-      idsToReject.forEach((id) => next.delete(id));
-      return next;
-    });
+    // 更新接受的操作
+    const newAccepted = new Set(acceptedOperations);
+    idsToReject.forEach((id) => newAccepted.delete(id));
+    setAcceptedOperations(newAccepted);
   };
 
   const handleAcceptAll = () => {
@@ -416,6 +366,30 @@ export function usePolishText() {
     setHighlightedGroupId(groupId);
   };
 
+  // 按replaceId分组的操作
+  const groupedOperations: DiffOperation[][] = diffOperations.reduce(
+    (groups, op) => {
+      if (op.type === 0) return groups;
+      const newReplaceId = 'r-' + op.replaceId;
+      if (op.replaceId !== undefined) {
+        const existingGroup = groups.find(
+          (group) =>
+            group[0].replaceId !== undefined &&
+            'r-' + group[0].replaceId === newReplaceId
+        );
+        if (existingGroup) {
+          existingGroup.push(op);
+        } else {
+          groups.push([op]);
+        }
+      } else {
+        groups.push([op]);
+      }
+      return groups;
+    },
+    [] as DiffOperation[][]
+  );
+
   return {
     text,
     setText,
@@ -435,15 +409,11 @@ export function usePolishText() {
     handleCustomize,
     getFinalText,
     isPolishMode,
-    setIsPolishMode,
     polishStyle,
-    setPolishStyle,
     polishTone,
-    setPolishTone,
     resetState,
-    highlightedGroupId,
     handleHighlight,
     MAX_LENGTH,
-    progress, // 导出进度状态
+    progress,
   };
 }
